@@ -247,9 +247,7 @@ unsafe fn pg_guard_ffi_boundary_impl<T, F: FnOnce() -> T>(f: F) -> T {
             pg_sys::PG_exception_stack = prev_exception_stack;
             pg_sys::error_context_stack = prev_error_context_stack;
 
-            // finally, turn this Postgres error into a Rust panic so that we can ensure proper
-            // Rust stack unwinding and also defer handling until later
-            std::panic::panic_any(CaughtError::PostgresError(ErrorReportWithLevel {
+            let error = CaughtError::PostgresError(ErrorReportWithLevel {
                 level,
                 inner: ErrorReport {
                     sqlerrcode,
@@ -258,7 +256,12 @@ unsafe fn pg_guard_ffi_boundary_impl<T, F: FnOnce() -> T>(f: F) -> T {
                     hint,
                     location: ErrorReportLocation { file, funcname, line, col: 0, backtrace: None },
                 },
-            }))
+            });
+            println!("About to panic with {error:?}: {:#?}", std::backtrace::Backtrace::force_capture());
+
+            // finally, turn this Postgres error into a Rust panic so that we can ensure proper
+            // Rust stack unwinding and also defer handling until later
+            std::panic::panic_any(error)
         }
     }
 }
