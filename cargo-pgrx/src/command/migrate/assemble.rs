@@ -42,6 +42,10 @@ pub(crate) struct Assemble {
     #[clap(long, value_parser)]
     pub(crate) manifest_path: Option<PathBuf>,
 
+    /// Allow assembling a stub upgrade script when no unreleased fragments exist
+    #[clap(long)]
+    pub(crate) allow_empty: bool,
+
     #[clap(from_global, action = clap::ArgAction::Count)]
     pub(crate) verbose: u8,
 }
@@ -69,6 +73,7 @@ pub struct AssembleParams<'a> {
     pub dirs: MigrationDirectories<'a>,
     pub versions: VersionSpec<'a>,
     pub retention: FragmentRetention,
+    pub allow_empty: bool,
 }
 
 pub fn assemble_release_upgrade_script(params: AssembleParams<'_>) -> eyre::Result<PathBuf> {
@@ -87,20 +92,26 @@ pub fn assemble_release_upgrade_script(params: AssembleParams<'_>) -> eyre::Resu
 
     let fragments = collect_fragments_from_dir(params.dirs.unreleased_dir)?;
     if fragments.is_empty() {
-        return Err(eyre!(
-            "no unreleased SQL migration fragments found in `{}`",
-            params.dirs.unreleased_dir.display()
-        ));
-    }
-
-    println!(
-        "{} {} SQL migration fragment(s) from {}",
-        "  Assembling".bold().green(),
-        fragments.len().to_string().bold().white(),
-        params.dirs.unreleased_dir.display().cyan()
-    );
-    for fragment in &fragments {
-        println!("   - {}", fragment.filename);
+        if !params.allow_empty {
+            return Err(eyre!(
+                "no unreleased SQL migration fragments found in `{}`. Specify a target version or pass `--allow-empty` to generate a stub upgrade script.",
+                params.dirs.unreleased_dir.display()
+            ));
+        }
+        println!(
+            "{} 0 SQL migration fragments; generating stub upgrade script",
+            "  Assembling".bold().yellow()
+        );
+    } else {
+        println!(
+            "{} {} SQL migration fragment(s) from {}",
+            "  Assembling".bold().green(),
+            fragments.len().to_string().bold().white(),
+            params.dirs.unreleased_dir.display().cyan()
+        );
+        for fragment in &fragments {
+            println!("   - {}", fragment.filename);
+        }
     }
 
     let out_dir = params.dirs.output_dir.unwrap_or(params.dirs.sql_dir);
@@ -177,6 +188,8 @@ impl CommandExecute for Assemble {
             FragmentRetention::Consume
         };
 
+        let allow_empty = self.target_version.is_some() || self.allow_empty;
+
         let params = AssembleParams {
             extname: &extname,
             dirs: MigrationDirectories {
@@ -190,6 +203,7 @@ impl CommandExecute for Assemble {
                 manifest_version: manifest_pkg_ver.as_deref(),
             },
             retention,
+            allow_empty,
         };
 
         assemble_release_upgrade_script(params)?;
@@ -225,6 +239,7 @@ mod tests {
                 manifest_version: Some("0.3.0"),
             },
             retention: FragmentRetention::Consume,
+            allow_empty: false,
         };
 
         let output_file = assemble_release_upgrade_script(params).unwrap();
@@ -263,6 +278,7 @@ mod tests {
                 manifest_version: Some("0.3.0"),
             },
             retention: FragmentRetention::Preserve,
+            allow_empty: false,
         };
 
         let output_file = assemble_release_upgrade_script(params).unwrap();
@@ -272,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn assemble_errors_when_no_fragments() {
+    fn assemble_errors_when_no_fragments_and_not_allowed() {
         let temp = tempfile::tempdir().unwrap();
         let sql_dir = temp.path().join("sql");
         let unreleased_dir = sql_dir.join("unreleased");
@@ -291,10 +307,45 @@ mod tests {
                 manifest_version: None,
             },
             retention: FragmentRetention::Consume,
+            allow_empty: false,
         };
 
         let res = assemble_release_upgrade_script(params);
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("no unreleased SQL migration fragments found"));
+    }
+
+    #[test]
+    fn assemble_generates_stub_when_allow_empty() {
+        let temp = tempfile::tempdir().unwrap();
+        let sql_dir = temp.path().join("sql");
+        let unreleased_dir = sql_dir.join("unreleased");
+        fs::create_dir_all(&unreleased_dir).unwrap();
+
+        let params = AssembleParams {
+            extname: "test_ext",
+            dirs: MigrationDirectories {
+                sql_dir: &sql_dir,
+                unreleased_dir: &unreleased_dir,
+                output_dir: None,
+            },
+            versions: VersionSpec {
+                target_version: "0.3.0",
+                prev_version: Some("0.2.0"),
+                manifest_version: None,
+            },
+            retention: FragmentRetention::Consume,
+            allow_empty: true,
+        };
+
+        let output_file = assemble_release_upgrade_script(params).unwrap();
+        assert_eq!(output_file, sql_dir.join("test_ext--0.2.0--0.3.0.sql"));
+        assert!(output_file.exists());
+
+        let content = fs::read_to_string(&output_file).unwrap();
+        assert_eq!(
+            content.trim(),
+            "\\echo Use \"ALTER EXTENSION test_ext UPDATE TO '0.3.0'\" to load this file. \\quit"
+        );
     }
 }

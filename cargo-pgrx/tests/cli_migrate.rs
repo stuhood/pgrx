@@ -30,6 +30,7 @@ fn migrate_assemble_help_succeeds() {
     assert!(stdout.contains("--prev-version"), "expected --prev-version in help");
     assert!(stdout.contains("--preserve-fragments"), "expected --preserve-fragments in help");
     assert!(stdout.contains("--output-dir"), "expected --output-dir in help");
+    assert!(stdout.contains("--allow-empty"), "expected --allow-empty in help");
 }
 
 #[test]

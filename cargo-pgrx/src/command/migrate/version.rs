@@ -110,7 +110,7 @@ pub fn derive_ephemeral_target_version(
         return pkg_ver.clone();
     }
 
-    Version::new(prev_version.major, prev_version.minor + 1, 0)
+    Version::new(prev_version.major, prev_version.minor, prev_version.patch + 1)
 }
 
 pub fn update_control_file_default_version(
@@ -165,12 +165,12 @@ mod tests {
         let pkg_equal = Version::parse("0.25.0").unwrap();
         assert_eq!(
             derive_ephemeral_target_version(&prev, Some(&pkg_equal)),
-            Version::parse("0.26.0").unwrap()
+            Version::parse("0.25.1").unwrap()
         );
 
         assert_eq!(
             derive_ephemeral_target_version(&prev, None),
-            Version::parse("0.26.0").unwrap()
+            Version::parse("0.25.1").unwrap()
         );
     }
 

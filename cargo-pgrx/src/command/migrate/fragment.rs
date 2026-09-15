@@ -205,11 +205,11 @@ pub fn topological_sort_fragments(
             }
 
             if !found {
-                return Err(eyre!(
-                    "migration fragment `{}` declares prerequisite `{}`, but no matching fragment exists in the unreleased directory",
+                tracing::debug!(
+                    "fragment `{}` declares prerequisite `{}`, which was not found in unreleased fragments (assuming already applied in previous release)",
                     fragment.filename,
                     dep
-                ));
+                );
             }
         }
 
@@ -367,7 +367,7 @@ SELECT 1;
     }
 
     #[test]
-    fn missing_dependency_errors() {
+    fn missing_dependency_assumed_already_applied() {
         let f1 = MigrationFragment {
             path: PathBuf::from("6221.dependent.sql"),
             filename: "6221.dependent.sql".to_string(),
@@ -375,8 +375,9 @@ SELECT 1;
             dependencies: vec![FragmentDependency::Id(FragmentId::Numeric(9999))],
             sql_content: "-- 6221".to_string(),
         };
-        let err = topological_sort_fragments(vec![f1]).unwrap_err();
-        assert!(err.to_string().contains("declares prerequisite `9999`"));
+        let sorted = topological_sort_fragments(vec![f1]).unwrap();
+        assert_eq!(sorted.len(), 1);
+        assert_eq!(sorted[0].filename, "6221.dependent.sql");
     }
 
     #[test]

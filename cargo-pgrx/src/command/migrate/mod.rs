@@ -97,7 +97,7 @@ pub(crate) fn handle_unreleased_fragments(
                 let target = version::derive_ephemeral_target_version(&latest_target, manifest_ver.as_ref());
                 (latest_target, target)
             } else if let Some(pkg_ver) = manifest_ver {
-                let target = semver::Version::new(pkg_ver.major, pkg_ver.minor + 1, 0);
+                let target = semver::Version::new(pkg_ver.major, pkg_ver.minor, pkg_ver.patch + 1);
                 (pkg_ver, target)
             } else {
                 return Err(eyre!("could not determine version for ephemeral upgrade script"));
@@ -289,16 +289,16 @@ version = \"0.25.0\"
             &mut tracking,
         ).unwrap();
 
-        // Target version derived: 0.25.0 -> 0.26.0
-        let expected_sql = extdir.join("my_ext--0.25.0--0.26.0.sql");
+        // Target version derived: 0.25.0 -> 0.25.1
+        let expected_sql = extdir.join("my_ext--0.25.0--0.25.1.sql");
         assert!(expected_sql.exists());
         assert_eq!(tracking, vec![expected_sql.clone()]);
 
         let sql_content = fs::read_to_string(&expected_sql).unwrap();
-        assert!(sql_content.contains("ALTER EXTENSION my_ext UPDATE TO '0.26.0'"));
+        assert!(sql_content.contains("ALTER EXTENSION my_ext UPDATE TO '0.25.1'"));
         assert!(sql_content.contains("CREATE FUNCTION f()"));
 
         let control_content = fs::read_to_string(&control_path).unwrap();
-        assert!(control_content.contains("default_version = '0.26.0'"));
+        assert!(control_content.contains("default_version = '0.25.1'"));
     }
 }
