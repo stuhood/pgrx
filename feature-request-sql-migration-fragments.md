@@ -8,10 +8,10 @@ In active extension repositories with stable release branches (e.g. maintaining 
 1. Branch decoupling & cherry-picking: When authoring a change on `main`, it is not always clear which release version will ship first. Monolithic scripts couple SQL changes to specific version-range filenames, which means cherry-picking a change to a stable release branch typically requires manually adjusting or splitting migration scripts across branches.
 2. Local dev iteration with fragments: While `cargo pgrx install` copies pre-existing version-to-version scripts (`sql/extension--<old>--<new>.sql`), it does not assemble unreleased fragment files. Without an ephemeral upgrade script in Postgres's extension directory during development, developers testing in-flight changes against existing databases often resort to dropping and recreating the extension, which resets test data and requires rebuilding dependent indexes.
 
-A fragment-based workflow addresses these challenges:
+Taking inspiration from ORM migration frameworks (such as Django, Alembic, or Flyway), where schema modifications are authored as discrete migration units declaring prerequisite dependencies, a fragment-based workflow addresses these challenges:
 - Dedicated, version-agnostic fragments: Each change introduces a standalone fragment file (e.g. `sql/unreleased/<PR>.<description>.sql`). The fragment cherry-picks cleanly between branches as an isolated unit and is assembled into the correct versioned upgrade script when that specific branch cuts a release.
 - Ephemeral dev assembly: `cargo pgrx install` automatically assembles unreleased fragments directly into Postgres's `$SHAREDIR/extension/` and updates `default_version` in the installed `.control` file. Developers can run `ALTER EXTENSION ... UPDATE;` immediately without modifying the git working tree or resetting existing test databases.
-- Release assembly: A dedicated migration subcommand (`cargo pgrx migrate assemble`) topologically sorts fragments based on explicit dependencies (`-- depends-on:`), concatenates them into the final versioned upgrade script, and removes the consumed fragments.
+- Release assembly: A dedicated migration subcommand (e.g. `cargo pgrx migrate assemble`) topologically sorts fragments based on explicit dependencies (`-- depends-on:`), concatenates them into the final versioned upgrade script, and removes the consumed fragments.
 
 ---
 
@@ -82,6 +82,8 @@ or
 * Topological Sort: Fragments are ordered so dependencies run before dependents.
 * Deterministic Tie-Breaking: Independent fragments are sorted deterministically (e.g. by `(ID, filename)`).
 * Cycle & Missing Dependency Detection: Cycles or missing dependencies are reported with clear diagnostics. On release branches, this also allows CI to verify that any prerequisite fragments were backported along with the dependent fragment.
+
+This mechanism takes direct inspiration from ORM migration systems (such as Django migrations or Alembic), where migration files form a directed acyclic graph (DAG) via explicit dependency declarations rather than relying on brittle global sequence numbers. In the context of PostgreSQL extensions, `cargo-pgrx` adapts this model by resolving the DAG and compiling it into the versioned `<ext>--<prev>--<target>.sql` file expected by Postgres.
 
 #### 3. Development Workflow: Ephemeral Assembly during `cargo pgrx install`
 
